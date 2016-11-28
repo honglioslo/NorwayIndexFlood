@@ -1,0 +1,1014 @@
+---
+title: "history blocks"
+author: "Hong Li"
+date: "7. november 2016"
+output: html_document
+
+Q = QMED * X_T
+Q: the estimated flood; QMED: the index flood; X_T: regional growth curve
+
+Future coding:
+stationary (trend) test, interdependence test
+
+how to count non-stationarity if it exists
+combine nearest station (donor) and catchment descriptions together
+
+rather than on the AMS, can be QMED/mean(annual_runoff), rather rainfall can be Runoff coefficient
+landuse and geology are bad indicator of flood (since the ground has get saturated before flood in most cases in saturated runoff area)
+
+how to use daily discharge information in regression
+\\nve\fil\h\HM\Interne Prosjekter\Flomkart\Data\Flooddata\ams_and_fgp.txt
+flood and rain component
+---
+QMED can be calculated from historical discharge at sites. For ungauged sites, hydrological modelling and spatial regression are generally used. There, we only examine the spatial regression (or interpolation) methods.
+
+The discharge data are stored at: \\nve\fil\h\HM\Interne Prosjekter\Flomkart\Data\Flooddata\msvalues.txt (daily and subdaily). Catchment data are stored at: \\nve\fil\h\HM\Interne Prosjekter\Flomkart\Data\CatchmentCharacteristics\cp_floodstations.txt. GIS data of stations and catchments, climate data are also used.
+
+1. prepare the data. 
+1.1 select the daily annual maximum for each station; 
+```{r, echo = TRUE}
+library(zoo);
+library(lubridate);
+setwd("//nve/fil/h/HM/Interne Prosjekter/Flomkart/");
+DataPath <- "R:/personlig/holi/Work/FlomKart/Data/";
+FileFlood <- "Data/Flooddata/amsvalues.txt";
+AMS <- read.table(FileFlood, header = TRUE, sep = ";");
+snr <- AMS[,1] * 100000 + AMS[,2];
+slist <- unique(snr);
+StaNames <- vector(length = length(slist)); QMED <- vector(length = length(slist)); 
+QMED_n <-  vector(length = length(slist));
+
+for (iSta in seq(1, length(slist), 1)) {
+  
+  test <- subset(AMS, main == slist[iSta] %% 100000);
+  test <- subset(test, regine == floor(slist[iSta]/100000));
+#years <- unique(year(as.Date(test[,3])));
+nY <- table(year(as.Date(test[,3])));
+Dates <- c(); Floods <- c();
+
+for (i in seq(1, length(nY), 1)) {
+  if (nY[i] > 1) {
+    testD <- test[which(year(as.Date(test[,3])) == names(nY[i])),];
+    Dates <- c(Dates, as.vector(testD[which(testD[,4] == max(testD[,4])), 3]));
+    Floods <- c(Floods, max(testD[,4]));
+    
+  } else {
+    Dates <-
+    c(Dates, as.vector(test[which(year(as.Date(test[,3])) == names(nY[i])), 3]));
+    Floods <-
+    c(Floods, test[which(year(as.Date(test[,3])) == names(nY[i])), 4]);
+  }
+}
+if (length(Floods) > (as.numeric(names(nY[length(nY)])) - as.numeric(names(nY[1])) + 1) ) { stop("false")}
+AMSZoo <- zoo(Floods, as.Date(Dates));
+StaNames[iSta] <- paste(test[1,1], test[1,2], sep = ".");
+QMED[iSta] <- median(as.numeric(AMSZoo)); 
+QMED_n[iSta] <- length(AMSZoo);
+write.table(AMSZoo, 
+            file = sprintf("%sQAM_%s.txt", DataPath, StaNames[iSta]), 
+            sep = ";", row.names = TRUE, quote = FALSE, col.names = FALSE);
+
+}
+FinalRe <- data.frame(StaName = StaNames, QMED = QMED, QMED_n = QMED_n);
+write.table(x = FinalRe, file = sprintf("%sQMED.txt", DataPath), sep = ";", row.names = FALSE, quote = FALSE);
+```
+
+1.2 prepare climate data for each station, including daily data and annual mean
+```{r, echo = TRUE}
+# Variable <- "S"; #snow
+# Variable <- "R"; #rainfall
+# Variable <- "P"; #precipitation
+# Variable <- "T"; #temperature
+ Variable <- "Q"; #runoff
+DataPath <- "R:/personlig/holi/Work/FlomKart/Data/";
+ 
+FileR <- sprintf("//nve/fil/h/HM/Interne Prosjekter/Flomkart/Data/FloodData/SeNorge2.1/ave%s.txt", Variable);
+MetR<- read.table(FileR, header = TRUE, sep = " ");
+#sub("X", " ", names(MetR))
+library(zoo);
+DataPath <- QMedFile <- "C:/Users/holi/Downloads/Index/Data/" ;
+Dates <- seq(as.Date("1958-01-01"), as.Date("2015-12-31"), by = "1 day")
+MetRNames <- sub("X", "", names(MetR));
+for (iSta in seq(1, dim(MetR)[2], 1)) { #dim(MetR)[2]
+  write.table(zoo(MetR[,iSta], Dates), sprintf("%s%s%s.txt", DataPath, Variable, MetRNames[iSta]), row.names = TRUE, col.names = FALSE)
+} 
+
+```
+
+```{r, echo=FALSE}
+Variable <- "P";
+FileR <- sprintf("//nve/fil/h/HM/Interne Prosjekter/Flomkart/Data/FloodData/SeNorge2.1/Save%s.txt", Variable);
+#FileR <- sprintf("/hdata/fou/personlig/holi/Work/FlomKart/FromProject/Save%s.txt", Variable);
+
+MetR<- read.table(FileR, header = TRUE, sep = " ");
+#sub("X", " ", names(MetR))
+AnnualMeanP <- apply(MetR, 2, sum); AnnualMeanP <- AnnualMeanP[2: length(AnnualMeanP)];
+MetRNames <- sub("X", "", names(AnnualMeanP));
+StaNuMet <- NULL;
+for (iSta in seq(1, length(MetRNames))) {
+  StaNuMet <- c(StaNuMet, substr(MetRNames[iSta], 1, nchar(MetRNames[iSta]) - 2));
+}
+
+#UsedMet <- sort(StaNuMet[StaNuMet %in% Common]);
+#sum(UsedMet == All$StaNu);
+
+#Index <- sapply(UsedMet, function(x) which(x == StaNuMet));
+#MetP <- as.matrix(AnnualMeanP[Index + 1], ncol = 1);
+#All <- cbind(All, MetP);
+#test if col are correct
+#MetRNames <- sub("X", "", colnames(t(MetP), do.NULL = FALSE));
+#StaNuMet <- NULL;
+#for (iSta in seq(1, length(MetRNames))) {
+#  StaNuMet <- c(StaNuMet, substr(MetRNames[iSta], 1, nchar(MetRNames[iSta]) - 2));
+#}
+#sum(StaNuMet == All$StaNu);
+```
+
+1.3 prepare location data
+```{r, echo=FALSE}
+library(maptools)
+GISPath <- "R:/personlig/holi/Work/FlomKart/FromProject/";
+#GISPath <- "/hdata/fou/personlig/holi/Work/FlomKart/FromProject/"
+StaShp <- readShapePoints(sprintf("%sHydrologi_MaleserieMalestasjon.shp", GISPath))
+CatShp <- readShapePoly(sprintf("%sCatShp.shp", GISPath))
+UsedSta <- StaShp[as.character(StaShp$stSamletID) %in% as.character(CatShp$stSamletID),]
+
+UniqueSta <- UsedSta[!duplicated(as.character(UsedSta$stSamletID)),];
+
+sum(as.character(UniqueSta$stSamletID) %in% as.character(CatShp$stSamletID))
+sum(as.character(CatShp$stSamletID) %in% as.character(UniqueSta$stSamletID))
+# projection methods UTM33N
+proj4string(UniqueSta) <- CRS("+proj=utm + zone=10 +datum=WGS84")
+proj4string(CatShp) <- CRS("+proj=utm + zone=10 +datum=WGS84")
+StaLoc <- coordinates(UniqueSta); colnames(StaLoc) <- c("UTM_X", "UTM_y", "UTM_z");
+UniqueSta <- cbind(UniqueSta, StaLoc);
+UniqueSta <- UniqueSta[order(as.character(UniqueSta$stSamletID)),]; 
+
+CatCentroids <- getSpPPolygonsLabptSlots(CatShp); 
+colnames(CatCentroids) <- c("UTM_X", "UTM_y");
+CatShp <- cbind(CatShp, CatCentroids);
+CatShp <- CatShp[order(as.character(CatShp$stSamletID)),];
+
+sum(as.character(UniqueSta$stSamletID) == as.character(CatShp$stSamletID))
+
+GIS <- cbind(UniqueSta, CatShp)
+
+```
+
+1.4 combine the data together the flood data, catchment data and climate data (mean annual precipitation) together
+```{r, echo=FALSE}
+QMedFile <- "R:/personlig/holi/Work/FlomKart/Data/QMED.txt" ;
+#QMedFile <- "/hdata/fou/personlig/holi/Work/FlomKart/Data/QMED.txt" ;
+Temp <- read.table(QMedFile, head = TRUE, sep = ";", colClasses = "character");
+UsedQ <- Temp[order(Temp$StaName),];
+
+# Cat data
+CatFile <- "//nve/fil/h/HM/Interne Prosjekter/Flomkart/Data/CatchmentCharacteristics/cp_floodstations.txt";
+#CatFile <- "/hdata/fou/personlig/holi/Work/FlomKart/FromProject/cp_floodstations.txt";
+Temp <- read.table(CatFile, header = TRUE, sep = ";", colClasses = "character");
+
+regine_nr<-as.integer(as.numeric(Temp[,1])/100000000); main_nr <- (as.numeric(Temp[,1]) - regine_nr*100000000)/1000; 
+StaNu <- sprintf("%s.%s", regine_nr, main_nr);
+
+CatCha <- cbind(StaNu, Temp);
+CatCha <- CatCha[order(CatCha$StaNu), ];
+
+Common <- Reduce(intersect, list(StaNu, UsedQ$StaName));
+UsedQ <- UsedQ[UsedQ$StaName %in% Common, ];
+CatCha <- CatCha[as.character(CatCha$StaNu) %in% Common, ]
+
+All <- cbind(UsedQ, CatCha); 
+AreaAve <- as.numeric(All$QMED)/as.numeric(All$AREAL_UTM3);
+All <- cbind(AreaAve, All);
+
+Variable <- "P";
+FileR <- sprintf("//nve/fil/h/HM/Interne Prosjekter/Flomkart/Data/FloodData/SeNorge2.1/Save%s.txt", Variable);
+#FileR <- sprintf("/hdata/fou/personlig/holi/Work/FlomKart/FromProject/Save%s.txt", Variable);
+
+MetR<- read.table(FileR, header = TRUE, sep = " ");
+#sub("X", " ", names(MetR))
+AnnualMeanP <- apply(MetR, 2, sum); AnnualMeanP <- AnnualMeanP[2: length(AnnualMeanP)];
+MetRNames <- sub("X", "", names(AnnualMeanP));
+StaNuMet <- NULL;
+for (iSta in seq(1, length(MetRNames))) {
+  StaNuMet <- c(StaNuMet, substr(MetRNames[iSta], 1, nchar(MetRNames[iSta]) - 2));
+}
+
+UsedMet <- sort(StaNuMet[StaNuMet %in% Common]);
+sum(UsedMet == All$StaNu);
+
+Index <- sapply(UsedMet, function(x) which(x == StaNuMet));
+MetP <- as.matrix(AnnualMeanP[Index], ncol = 1);
+All <- cbind(All, MetP);
+#test if col are correct
+MetRNames2 <- sub("X", "", colnames(t(MetP), do.NULL = FALSE));
+StaNuMet2 <- NULL;
+for (iSta in seq(1, length(MetRNames2))) {
+  StaNuMet2 <- c(StaNuMet2, substr(MetRNames2[iSta], 1, nchar(MetRNames2[iSta]) - 2));
+}
+sum(StaNuMet2 == as.character(All$StaNu));
+
+
+All_stID <- sprintf("%s.0", All$StaName); All <- cbind(All, All_stID); All <- All[order(All_stID),];
+GIS <- GIS[order(GIS$stID),]; 
+
+Common <- Reduce(intersect, list(All$All_stID, GIS$stID));
+AllUsed <- All[All$All_stID %in% Common,];
+GISUsed <- GIS[GIS$stID %in% Common,];
+
+AllNotUsed <- All[!as.character(All$All_stID) %in% Common,];
+GISNotUsed <- GIS[!GIS$stID %in% Common,];
+
+sum(GISUsed$stID == AllUsed$All_stID);
+FinalUsed <- cbind(AllUsed, GISUsed);
+correct data based on \\nve\fil\h\HM\Interne Prosjekter\Flomkart\Data\CatchmentCharacteristics\Feltnr_flomkart_til_feltnr_GIS.txt
+# as.character(AllNotUsed$StaNu)
+# [1] "109.19" "12.96"  "123.13" "139.5"  "155.6"  "16.81"  "2.21"   "2.457"  "20.4"   "25.30"  "26.8"   "311.10" "32.6"   "36.2"   "75.2"  
+# as.character(GISNotUsed$stID)
+# [1] "109.25.0" "12.9.0"   "123.49.0" "139.31.0" "155.12.0" "16.125.0" "2.271.0"  "2.294.0"  "2.481.0"  "20.8.0"   "25.1.0"   "26.44.0" 
+# [13] "311.16.0" "32.1.0"   "36.14.0"  "75.1.0"  
+
+save(c(AllUsed, GISUsed), file = sprintf("%sAllMatchInfo.RData", DataPath));
+
+```
+
+2. examine QMED
+2.1 how many years of data are required to get good QMED in Norwegian context
+  The recommendation is to use median of annual flood max if longer than 13 years, otherwise use POT to estimate (Flood estimation handbook (V3) by Alice Robson and Duncan Reed, P4 Figure 2.2).
+  Here, we barely use annual maximum and we want to look how many years of data are rquired at the Norwegian context
+ 
+Create samples for each number and examine the changes with the length of data
+```{r, echo=FALSE}
+library(mgcv);
+DataPath <- "R:/personlig/holi/Work/FlomKart/Data/";
+for (iS in seq(14, 124, 1)) {
+  for (iG in seq(2, iS * 0.5, 1)) { #iS * 0.5
+#     N <- 100000;
+#     nMax <- N;
+#     if (iG == 2) nMax <- dim(combn(iS, iG))[2];
+#     if ((iS < 86) & (iG == 3)) nMax <- dim(combn(iS, iG))[2];
+#     if ((iS < 41) & (iG == 4)) nMax <- dim(combn(iS, iG))[2];
+#     if ((iS < 29) & (iG == 5)) nMax <- dim(combn(iS, iG))[2];
+#     if ((iS < 23) & (iG == 6)) nMax <- dim(combn(iS, iG))[2];
+#     if ((iS < 21) & (iG == 7)) nMax <- dim(combn(iS, iG))[2];
+#     if ((iS < 20) & (iG == 8)) nMax <- dim(combn(iS, iG))[2];
+#     if ((iS < 20) & (iG == 9)) nMax <- dim(combn(iS, iG))[2];
+
+     N <- 1e06; nMax <- N;
+     if (iG <= 3) nMax <- dim(combn(iS, iG))[2];
+     if ((iS < 72) & (iG == 4)) nMax <- dim(combn(iS, iG))[2];
+     if ((iS < 44) & (iG == 5)) nMax <- dim(combn(iS, iG))[2];
+     if ((iS < 33) & (iG == 6)) nMax <- dim(combn(iS, iG))[2];
+     if ((iS < 28) & (iG == 7)) nMax <- dim(combn(iS, iG))[2];
+     if ((iS < 25) & (iG == 8)) nMax <- dim(combn(iS, iG))[2];
+     if ((iS < 24) & (iG == 9)) nMax <- dim(combn(iS, iG))[2];
+     if ((iS < 23) & (iG == 10)) nMax <- dim(combn(iS, iG))[2];
+     if ((iS < 23) & (iG == 11)) nMax <- dim(combn(iS, iG))[2];    
+
+    if (nMax > N) {
+      stop(sprintf("wrong in sample iS:%d iG:%d", iS, iG));
+    }
+
+    print(sprintf("doing iS: %d iG:%d", iS, iG));
+    if (nMax < N) {
+      print("produce all");
+      US <- combn(iS, iG);
+    } else {
+      print("produce some")
+      Samples <- replicate(nMax, sample(1:iS, iG, replace = FALSE), simplify = "array");
+      SortS <- apply(Samples, 2, sort);
+      US <- t(uniquecombs(t(SortS)));
+      while (dim(US)[2] < nMax) {
+        print(dim(US));
+        Samples <- replicate((nMax - dim(US)[2])*1.05, sample(1:iS, iG, replace = FALSE), simplify = "array");
+        SortS <- cbind(US, apply(Samples, 2, sort));
+        US <- t(uniquecombs(t(SortS)));
+      }
+    }
+     write.table(t(US[,1:nMax]), sprintf("%s%04dsamples_%04d.txt", DataPath, iS, iG), row.names = FALSE, col.names = FALSE, sep = ";");
+  }
+}
+
+```
+Examine selected years and indicators' change
+?Stations with more than 50 years of data and for UsedYears <- c(5, 10, 15, 30, 50);
+```{r, echo=FALSE}
+#DataPath <- "/hdata/fou/personlig/holi/Work/FlomKart/Data/";
+DataPath <- "R:/personlig/holi/Work/FlomKart/Data/";
+FileQMED <- sprintf("%sQMED.txt", DataPath); 
+Temp <- read.table(FileQMED, header = TRUE, sep = ";", colClasses = "character");
+StaUsed <- Temp[as.numeric(Temp$QMED_n) >= 50,];
+#NSamples <- 1e6; 
+UsedYears <- c(5, 10, 15, 30, 50);
+StaNumber <- NULL; QMed <- NULL; YearsN <- NULL; NS <- NULL; Diff <- NULL; Item <- NULL;
+for (iSta in seq(1, dim(StaUsed)[1], 1)) { #dim(StaUsed)[1]
+  ptm <-  proc.time();
+  StaName <- StaUsed[iSta, 1]; PerfV <- as.numeric(StaUsed[iSta,2]); 
+  StaNumber <- rbind(StaNumber, as.matrix(rep(StaName, 3*length(UsedYears)), ncol = 1));
+  QMed <- rbind(QMed, as.matrix(rep(PerfV, 3*length(UsedYears)), ncol = 1));
+  YearsN <- rbind(YearsN, as.matrix(rep(as.numeric(StaUsed[iSta,3]), 3*length(UsedYears)), ncol = 1));
+  NS <- rbind(NS, as.matrix(rep(UsedYears, 3), ncol = 1));
+    
+  load(file = sprintf("%sSelectedQMed%s.RData", DataPath, StaName));
+  for (iYear in UsedYears) {
+	SubSet <- subset(Q, NS == iYear);
+	RelativeDiff <- as.matrix(c(median(SubSet[,1])/PerfV, max(SubSet[,1])/PerfV, min(SubSet[,1])/PerfV), ncol =1)
+	Diff <- rbind(Diff, RelativeDiff);
+	Item <- rbind(Item, as.matrix(c("Median", "Max", "Min"), ncol = 1));
+  }
+  print(sprintf("%s station", StaName));
+  print(proc.time() - ptm));
+}
+Final <- data.frame(StaNumber, QMed, YearsN, NS, Diff, Item);
+save(Final, file = sprintf("%sFinalStat.RData", DataPath));
+
+library(ggplot2)
+pBasic <- ggplot(Final, aes(factor(NS), Diff)) + geom_boxplot() + facet_grid(. ~ Item);
+pPlot <- pBasic + ylab("Relative") + xlab("Samples");
+GgFile <-sprintf("%sPlots/RelativeDiffBoxplot.png", DataPath);
+ggsave(GgFile, plot = pPlot, width = 18, height = 6, units = "cm"); #unlink(GgFile);
+# for all stations >= 50 years", 103 in total, based on 1e6 samples
+# against QMed
+pBasic <- ggplot(Final, aes(QMed, Diff)) + geom_point() + facet_grid( Item ~ NS, scale = "free");
+GgFile <-sprintf("%sPlots/RelativeDiff_QMed.png", DataPath);
+ggsave(GgFile, plot = pBasic, width = 25, height = 15, units = "cm"); #unlink(GgFile);
+
+CV <- NULL; Range <- NULL; Std <- NULL; CatDes <- NULL;
+StaUsed <- StaUsed[order(StaUsed$StaName),];
+CatCha$StaNu <- as.character(CatCha$StaNu);
+CatCha <- CatCha[order(CatCha$StaNu),]
+sum(CatCha$StaNu == StaUsed$StaName);
+for (iSta in seq(1, dim(StaUsed)[1], 1)) { #dim(StaUsed)[1]
+  ptm <-  proc.time();
+  StaName <- StaUsed[iSta, 1]; PerfV <- as.numeric(StaUsed[iSta,2]);
+  CatDes <- rbind(CatDes, rbind(CatCha[iSta,], CatCha[iSta,], CatCha[iSta,], CatCha[iSta,], CatCha[iSta,]));  
+  load(file = sprintf("%sSelectedQMed%s.RData", DataPath, StaName));
+  for (iYear in UsedYears) {
+	SubSet <- subset(Q, NS == iYear);
+	RelativeDiff <- as.matrix(c(median(SubSet[,1])/PerfV, max(SubSet[,1])/PerfV, min(SubSet[,1])/PerfV), ncol =1)
+	CV <- c(CV, sd(SubSet[,1]/PerfV)/mean(SubSet[,1]/PerfV));
+	Range <- c(Range, (max(SubSet[,1])-min(SubSet[,1]))/PerfV);
+	Std <- c(Std, sd(SubSet[,1]/PerfV));
+  }
+  print(sprintf("%s station", StaName));
+  print(proc.time() - ptm)
+}
+NS <- rep(UsedYears, dim(StaUsed)[1]);
+Final <- data.frame(CatDes, CV, Range, Std, NS);
+pBasic <- ggplot(Final, aes(as.numeric(AREAL_UTM3), CV)) + geom_point() + geom_smooth(method = "lm", se = FALSE)
+pPlot <- pBasic + facet_grid(. ~ NS) + xlab("AREAL_UTM3") + ylab("CV");
+GgFile <-sprintf("%sPlots/CV.png", DataPath);
+ggsave(GgFile, plot = pPlot, width = 25, height = 5, units = "cm"); #unlink(GgFile);
+
+pBasic <- ggplot(Final, aes(as.numeric(AREAL_UTM3), Range)) + geom_point() + geom_smooth(method = "lm", se = FALSE)
+pPlot <- pBasic + facet_grid(. ~ NS) + xlab("AREAL_UTM3") + ylab("Range");
+GgFile <-sprintf("%sPlots/Range.png", DataPath);
+ggsave(GgFile, plot = pPlot, width = 25, height = 5, units = "cm"); #unlink(GgFile);
+
+pBasic <- ggplot(Final, aes(as.numeric(AREAL_UTM3), Std)) + geom_point() + geom_smooth(method = "lm", se = FALSE)
+pPlot <- pBasic + facet_grid(. ~ NS) + xlab("AREAL_UTM3") + ylab("SD");
+GgFile <-sprintf("%sPlots/SD.png", DataPath);
+ggsave(GgFile, plot = pPlot, width = 25, height = 5, units = "cm"); #unlink(GgFile);
+
+
+Final$GRAD_1085[as.numeric(Final$GRAD_1085) < 0] <- NA;
+pBasic <- ggplot(Final, aes(as.numeric(GRAD_1085), CV)) + geom_point() + geom_smooth(method = "lm", se = FALSE)
+pPlot <- pBasic + facet_grid(. ~ NS) + xlab("GRAD_1085") + ylab("CV");
+GgFile <-sprintf("%sPlots/CV_GRAD_1085.png", DataPath);
+ggsave(GgFile, plot = pPlot, width = 25, height = 5, units = "cm"); #unlink(GgFile);
+
+pBasic <- ggplot(Final, aes(as.numeric(GRAD_1085), Range)) + geom_point() + geom_smooth(method = "lm", se = FALSE)
+pPlot <- pBasic + facet_grid(. ~ NS) + xlab("GRAD_1085") + ylab("Range");
+GgFile <-sprintf("%sPlots/Range_GRAD_1085.png", DataPath);
+ggsave(GgFile, plot = pPlot, width = 25, height = 5, units = "cm"); #unlink(GgFile);
+
+pBasic <- ggplot(Final, aes(as.numeric(GRAD_1085), Std)) + geom_point() + geom_smooth(method = "lm", se = FALSE)
+pPlot <- pBasic + facet_grid(. ~ NS) + xlab("GRAD_1085") + ylab("SD");
+GgFile <-sprintf("%sPlots/SD_GRAD_1085.png", DataPath);
+ggsave(GgFile, plot = pPlot, width = 25, height = 5, units = "cm"); #unlink(GgFile);
+
+
+Final$GRAD_1085[as.numeric(Final$GRAD_1085) > 200] <- NA;
+pBasic <- ggplot(Final, aes(as.numeric(GRAD_1085), CV)) + geom_point() + geom_smooth(method = "lm", se = TRUE)
+pPlot <- pBasic + facet_grid(. ~ NS) + xlab("GRAD_1085") + ylab("CV");
+GgFile <-sprintf("%sPlots/CV_GRAD_1085_2.png", DataPath);
+ggsave(GgFile, plot = pPlot, width = 25, height = 5, units = "cm"); #unlink(GgFile);
+
+pBasic <- ggplot(Final, aes(as.numeric(GRAD_1085), Range)) + geom_point() + geom_smooth(method = "lm", se = TRUE)
+pPlot <- pBasic + facet_grid(. ~ NS) + xlab("GRAD_1085") + ylab("Range");
+GgFile <-sprintf("%sPlots/Range_GRAD_1085_2.png", DataPath);
+ggsave(GgFile, plot = pPlot, width = 25, height = 5, units = "cm"); #unlink(GgFile);
+
+pBasic <- ggplot(Final, aes(as.numeric(GRAD_1085), Std)) + geom_point() + geom_smooth(method = "lm", se = TRUE)
+pPlot <- pBasic + facet_grid(. ~ NS) + xlab("GRAD_1085") + ylab("SD");
+GgFile <-sprintf("%sPlots/SD_GRAD_1085_2.png", DataPath);
+ggsave(GgFile, plot = pPlot, width = 25, height = 5, units = "cm"); #unlink(GgFile);
+save(Final, file = sprintf("%sStatCat.RData", DataPath))
+
+DataPath <- "/hdata/fou/personlig/holi/Work/FlomKart/Data/";
+load(sprintf("%sStatCat.RData", DataPath))
+library(ggplot2)
+Final$GRAD_FELT[as.numeric(Final$GRAD_FELT) <= 0] <- NA;
+pBasic <- ggplot(Final, aes(as.numeric(GRAD_FELT), CV)) + geom_point() + geom_smooth(method = "lm", se = TRUE)
+pPlot <- pBasic + facet_grid(. ~ NS) + xlab("GRAD_FELT") + ylab("CV");
+GgFile <-sprintf("%sPlots/CV_GRAD_FELT_2.png", DataPath);
+ggsave(GgFile, plot = pPlot, width = 25, height = 5, units = "cm"); #unlink(GgFile);
+
+pBasic <- ggplot(Final, aes(as.numeric(GRAD_FELT), Range)) + geom_point() + geom_smooth(method = "lm", se = TRUE)
+pPlot <- pBasic + facet_grid(. ~ NS) + xlab("GRAD_FELT") + ylab("Range");
+GgFile <-sprintf("%sPlots/Range_GRAD_FELT_2.png", DataPath);
+ggsave(GgFile, plot = pPlot, width = 25, height = 5, units = "cm"); #unlink(GgFile);
+
+pBasic <- ggplot(Final, aes(as.numeric(GRAD_FELT), Std)) + geom_point() + geom_smooth(method = "lm", se = TRUE)
+pPlot <- pBasic + facet_grid(. ~ NS) + xlab("GRAD_FELT") + ylab("SD");
+GgFile <-sprintf("%sPlots/SD_GRAD_FELT_2.png", DataPath);
+ggsave(GgFile, plot = pPlot, width = 25, height = 5, units = "cm"); #unlink(GgFile);
+
+pBasic <- ggplot(Final, aes(as.numeric(FELT_LE_KM), CV)) + geom_point() + geom_smooth(method = "lm", se = TRUE)
+pPlot <- pBasic + facet_grid(. ~ NS) + xlab("FELT_LE_KM") + ylab("CV");
+GgFile <-sprintf("%sPlots/CV_FELT_LE_KM.png", DataPath);
+ggsave(GgFile, plot = pPlot, width = 25, height = 5, units = "cm"); #unlink(GgFile);
+
+pBasic <- ggplot(Final, aes(as.numeric(FELT_LE_KM), Range)) + geom_point() + geom_smooth(method = "lm", se = TRUE)
+pPlot <- pBasic + facet_grid(. ~ NS) + xlab("FELT_LE_KM") + ylab("Range");
+GgFile <-sprintf("%sPlots/FELT_LE_KM.png", DataPath);
+ggsave(GgFile, plot = pPlot, width = 25, height = 5, units = "cm"); #unlink(GgFile);
+
+pBasic <- ggplot(Final, aes(as.numeric(FELT_LE_KM), Std)) + geom_point() + geom_smooth(method = "lm", se = TRUE)
+pPlot <- pBasic + facet_grid(. ~ NS) + xlab("FELT_LE_KM") + ylab("SD");
+GgFile <-sprintf("%sPlots/SD_FELT_LE_KM.png", DataPath);
+ggsave(GgFile, plot = pPlot, width = 25, height = 5, units = "cm"); #unlink(GgFile);
+
+Final$ELV_LE_KM[as.numeric(Final$ELV_LE_KM) <0] <- NA;
+pBasic <- ggplot(Final, aes(as.numeric(ELV_LE_KM), CV)) + geom_point() + geom_smooth(method = "lm", se = TRUE)
+pPlot <- pBasic + facet_grid(. ~ NS) + xlab("ELV_LE_KM") + ylab("CV");
+GgFile <-sprintf("%sPlots/CV_ELV_LE_KM.png", DataPath);
+ggsave(GgFile, plot = pPlot, width = 25, height = 5, units = "cm"); #unlink(GgFile);
+
+pBasic <- ggplot(Final, aes(as.numeric(ELV_LE_KM), Range)) + geom_point() + geom_smooth(method = "lm", se = TRUE)
+pPlot <- pBasic + facet_grid(. ~ NS) + xlab("ELV_LE_KM") + ylab("Range");
+GgFile <-sprintf("%sPlots/Range_ELV_LE_KM.png", DataPath);
+ggsave(GgFile, plot = pPlot, width = 25, height = 5, units = "cm"); #unlink(GgFile);
+
+pBasic <- ggplot(Final, aes(as.numeric(ELV_LE_KM), Std)) + geom_point() + geom_smooth(method = "lm", se = TRUE)
+pPlot <- pBasic + facet_grid(. ~ NS) + xlab("ELV_LE_KM") + ylab("SD");
+GgFile <-sprintf("%sPlots/SD_ELV_LE_KM.png", DataPath);
+ggsave(GgFile, plot = pPlot, width = 25, height = 5, units = "cm"); #unlink(GgFile);
+
+Final$ELV_LE_KM[as.numeric(Final$ELV_LE_KM) <0] <- NA;
+pBasic <- ggplot(Final, aes(as.numeric(ELV_LE_KM)/as.numeric(AREAL_UTM3), CV)) + geom_point() + geom_smooth(method = "lm", se = TRUE)
+pPlot <- pBasic + facet_grid(. ~ NS) + xlab("ELV_LE_KM per area") + ylab("CV");
+GgFile <-sprintf("%sPlots/CV_ELV_LE_KM_per_area.png", DataPath);
+ggsave(GgFile, plot = pPlot, width = 25, height = 5, units = "cm"); #unlink(GgFile);
+
+pBasic <- ggplot(Final, aes(as.numeric(ELV_LE_KM)/as.numeric(AREAL_UTM3), Range)) + geom_point() + geom_smooth(method = "lm", se = TRUE)
+pPlot <- pBasic + facet_grid(. ~ NS) + xlab("ELV_LE_KM per area") + ylab("Range");
+GgFile <-sprintf("%sPlots/Range_ELV_LE_KM_per_area.png", DataPath);
+ggsave(GgFile, plot = pPlot, width = 25, height = 5, units = "cm"); #unlink(GgFile);
+
+pBasic <- ggplot(Final, aes(as.numeric(ELV_LE_KM)/as.numeric(AREAL_UTM3), Std)) + geom_point() + geom_smooth(method = "lm", se = TRUE)
+pPlot <- pBasic + facet_grid(. ~ NS) + xlab("ELV_LE_KM per area") + ylab("SD");
+GgFile <-sprintf("%sPlots/SD_ELV_LE_KM_per_area.png", DataPath);
+ggsave(GgFile, plot = pPlot, width = 25, height = 5, units = "cm"); #unlink(GgFile);
+
+
+Final$FELT_LE_KM[as.numeric(Final$FELT_LE_KM) <0] <- NA;
+pBasic <- ggplot(Final, aes(as.numeric(FELT_LE_KM)/as.numeric(AREAL_UTM3), CV)) + geom_point() + geom_smooth(method = "lm", se = TRUE)
+pPlot <- pBasic + facet_grid(. ~ NS) + xlab("FELT_LE_KM per area") + ylab("CV");
+GgFile <-sprintf("%sPlots/CV_FELT_LE_KM_per_area.png", DataPath);
+ggsave(GgFile, plot = pPlot, width = 25, height = 5, units = "cm"); #unlink(GgFile);
+
+pBasic <- ggplot(Final, aes(as.numeric(FELT_LE_KM)/as.numeric(AREAL_UTM3), Range)) + geom_point() + geom_smooth(method = "lm", se = TRUE)
+pPlot <- pBasic + facet_grid(. ~ NS) + xlab("FELT_LE_KM per area") + ylab("Range");
+GgFile <-sprintf("%sPlots/Range_FELT_LE_KM_per_area.png", DataPath);
+ggsave(GgFile, plot = pPlot, width = 25, height = 5, units = "cm"); #unlink(GgFile);
+
+pBasic <- ggplot(Final, aes(as.numeric(FELT_LE_KM)/as.numeric(AREAL_UTM3), Std)) + geom_point() + geom_smooth(method = "lm", se = TRUE)
+pPlot <- pBasic + facet_grid(. ~ NS) + xlab("FELT_LE_KM per area") + ylab("SD");
+GgFile <-sprintf("%sPlots/SD_FELT_LE_KM_per_area.png", DataPath);
+ggsave(GgFile, plot = pPlot, width = 25, height = 5, units = "cm"); #unlink(GgFile);
+
+```
+
+2.2 spatial regression or interpolation for QMED to estimate the ungauged sites
+  Examine correlation or dependence among predictors and predictand
+```{r, echo=FALSE}
+Cols <- c(1, 3, 4, seq(10, 36, 1));
+AllInfo <- NULL;
+for (iCol in Cols) {
+	AllInfo <- cbind(AllInfo, as.numeric(All[,iCol]));
+}
+library(caret)
+colnames(AllInfo) <- names(All)[Cols];
+AllInfo <- data.frame(AllInfo);
+AllInfo[AllInfo <= 0 ] <- NA;
+# [1] "AreaAve"    "QMED"       "QMED_n"     "AREAL_UTM3" "GRAD_1085" 
+# [6] "GRAD_FELT"  "GRAD_ELV"   "HEIGHT_MIN" "HEIGHT_10"  "HEIGHT_20" 
+#[11] "HEIGHT_30"  "HEIGHT_40"  "HEIGHT_50"  "HEIGHT_60"  "HEIGHT_70" 
+#[16] "HEIGHT_80"  "HEIGHT_90"  "HEIGHT_MAX" "FELT_LE_KM" "ELV_LE_KM" 
+#[21] "JORDBRUKPR" "MYRPRO"     "EFF_MYR"    "EFF_SJO"    "SKOGPRO"   
+#[26] "BREPRO"     "SJOPRO"     "SNAUFJPRO"  "URBANPRO"   "MetP"  
+# correalation among independent variables: terrian 
+pairs(~ GRAD_1085 + GRAD_FELT + GRAD_ELV + FELT_LE_KM + ELV_LE_KM + AREAL_UTM3, data = AllInfo)
+pairs(~ log(GRAD_1085) + log(GRAD_FELT) + log(GRAD_ELV) + log(FELT_LE_KM) + log(ELV_LE_KM) + log(AREAL_UTM3), data = AllInfo)
+pairs(~ HEIGHT_30 + HEIGHT_40 + HEIGHT_50 + HEIGHT_60 + HEIGHT_70 + HEIGHT_80 + HEIGHT_90 + HEIGHT_MAX, data = AllInfo); # are highly correlated
+pairs(~ JORDBRUKPR + MYRPRO + EFF_MYR + EFF_SJO + SKOGPRO + BREPRO + SJOPRO + SNAUFJPRO + URBANPRO, data = AllInfo)
+pairs(~ log(JORDBRUKPR) + log(MYRPRO) + log(EFF_MYR) + log(EFF_SJO) + log(SKOGPRO) + log(BREPRO) + log(SJOPRO) + log(SNAUFJPRO) + log(URBANPRO), data = AllInfo);
+pairs(~ AreaAve + AREAL_UTM3 + GRAD_1085 + GRAD_FELT + HEIGHT_50 + MetP + JORDBRUKPR + SKOGPRO + URBANPRO, data = AllInfo)
+pairs(~ AreaAve + AREAL_UTM3 + GRAD_1085 + GRAD_FELT + HEIGHT_50 + MetP + SKOGPRO, data = AllInfo)
+# correalation among dependent variables and independent variables
+pairs(~ log(AreaAve) + log(AREAL_UTM3) + log(GRAD_1085) + log(GRAD_FELT) + log(HEIGHT_50) + log(MetP) + log(SKOGPRO), data = AllInfo)
+# start from regression with intially selected variables
+pairs(~ log(AreaAve) + log(AREAL_UTM3) + log(GRAD_1085) + log(GRAD_FELT) + log(MetP), data = AllInfo)
+``` 
+  Regressions  
+  Data
+```{r, echo=FALSE}
+DataPath <- "R:/personlig/holi/Work/FlomKart/Data/";
+#load(FinalUsed, file = sprintf("%sAllMatchInfo.RData", DataPath));
+load(sprintf("%sAllMatchInfo.RData", DataPath));
+# AllUsed
+AllCols <- c(1, 3, 4, seq(10, 36, 1));
+testAll <-  data.frame(AllUsed[, AllCols]); test1 <- NULL;
+for (iCol in seq(1, dim(testAll)[2], 1)) {
+  print(iCol)
+  test1 <- cbind(test1, as.numeric(testAll[,iCol]));
+}
+test1[which(test1 <= 0)] <- NA; 
+test1 <- data.frame(test1)
+colnames(test1) <- names(testAll);
+testGIS <- cbind(GISUsed$UTM_X, GISUsed$UTM_y, GISUsed$UTM_X.1, GISUsed$UTM_y.1);
+colnames(testGIS) <- c("Sta_UTM_X", "Sta_UTM_Y", "Cat_UTM_X", "Cat_UTM_Y")
+
+AllInfo <- cbind(test1, testGIS);
+test <- is.na(AllInfo); colnames(test) <- names(AllInfo);
+Sta <- apply(test, 1, sum);
+Var <- apply(test, 2, sum);
+# Var
+#   AreaAve       QMED     QMED_n AREAL_UTM3  GRAD_1085  GRAD_FELT   GRAD_ELV HEIGHT_MIN  HEIGHT_10  HEIGHT_20  HEIGHT_30  HEIGHT_40  HEIGHT_50 
+#         0          0          0          0         78        121         78          3          0          0          0          0          0 
+# HEIGHT_60  HEIGHT_70  HEIGHT_80  HEIGHT_90 HEIGHT_MAX FELT_LE_KM  ELV_LE_KM JORDBRUKPR     MYRPRO    EFF_MYR    EFF_SJO    SKOGPRO     BREPRO 
+#         0          0          0          0          0          2         77        151         24        514         12         18        319 
+#    SJOPRO  SNAUFJPRO   URBANPRO       MetP  Sta_UTM_X  Sta_UTM_Y  Cat_UTM_X  Cat_UTM_Y 
+#         7         37        310          0          0          0          0          0 
+# can use AreaAve       QMED     QMED_n AREAL_UTM3 HEIGHT_50 HEIGHT_MAX MetP Sta_UTM_X  Sta_UTM_Y  Cat_UTM_X  Cat_UTM_Y 
+data <- cbind(AllInfo$AreaAve, AllInfo$AREAL_UTM3, AllInfo$HEIGHT_50, AllInfo$HEIGHT_MAX, AllInfo$MetP, AllInfo$Sta_UTM_X, AllInfo$Sta_UTM_Y, AllInfo$Cat_UTM_X, AllInfo$Cat_UTM_Y);
+colnames(data) <- c("AreaAve", "AREAL_UTM3", "HEIGHT_50", "HEIGHT_MAX", "MetP", "Sta_UTM_X", "Sta_UTM_Y", "Cat_UTM_X", "Cat_UTM_Y");
+data <- data.frame(data);
+```
+  Simple regression
+```{r, echo=FALSE}
+#n <- names(data);
+#paste(n[!n %in% "AreaAve"], collapse = " + ")
+pairs(~ AreaAve + AREAL_UTM3 + HEIGHT_50 + HEIGHT_MAX + MetP + Sta_UTM_X + Sta_UTM_Y + Cat_UTM_X + Cat_UTM_Y, data = data)
+pairs(~ AreaAve + AREAL_UTM3 + HEIGHT_50 + HEIGHT_MAX + MetP + Sta_UTM_X + Sta_UTM_Y + Cat_UTM_X + Cat_UTM_Y, data = log(data))
+
+fit <- lm(AreaAve ~ AREAL_UTM3 + HEIGHT_50 + HEIGHT_MAX + MetP + Sta_UTM_X + Sta_UTM_Y + Cat_UTM_X + Cat_UTM_Y, data = data)
+fitLog <- lm(AreaAve ~ AREAL_UTM3 + HEIGHT_50 + HEIGHT_MAX + MetP + Sta_UTM_X + Sta_UTM_Y + Cat_UTM_X + Cat_UTM_Y, data = log(data))
+
+summary(fit) # show results
+coefficients(fit) # model coefficients
+confint(fit, level=0.95) # CIs for model parameters
+fitted(fit) # predicted values
+residuals(fit) # residuals
+anova(fit) # anova table
+vcov(fit) # covariance matrix for model parameters
+influence(fit) # regression diagnostics
+layout(matrix(c(1,2,3,4),2,2)) # optional 4 graphs/page
+plot(fit)
+```
+  Stepwise Regression
+```{r, echo=FALSE}
+fit <- lm(AreaAve ~ AREAL_UTM3 + HEIGHT_50 + HEIGHT_MAX + MetP + Sta_UTM_X + Sta_UTM_Y + Cat_UTM_X + Cat_UTM_Y, data = data);
+#fitLog <- lm(AreaAve ~ AREAL_UTM3 + HEIGHT_50 + HEIGHT_MAX + MetP + Sta_UTM_X + Sta_UTM_Y + Cat_UTM_X + Cat_UTM_Y, data = log(data));
+#install.packages("MASS")
+library(MASS)
+stepAIC <- stepAIC(fit, direction="both", k = 2) # AIC
+stepBIC <- stepAIC(fit, direction="both", k = log(dim(AllInfo)[1])) # BIC
+
+#stepAICLog <- stepAIC(fitLog, direction="both", k = 2) # AIC
+#stepBICLog <- stepAIC(fitLog, direction="both", k = log(dim(AllInfo)[1])) # BIC
+
+
+stepAIC$anova
+#Initial Model: AreaAve ~ AREAL_UTM3 + GRAD_1085 + GRAD_FELT + MetP
+#Final Model:   AreaAve ~ AREAL_UTM3 + GRAD_1085 + GRAD_FELT + MetP
+stepBIC$anova
+#Initial Model:AreaAve ~ AREAL_UTM3 + GRAD_1085 + GRAD_FELT + MetP
+#Final Model:  AreaAve ~ GRAD_1085 + GRAD_FELT + MetP 
+```
+  All possible Regression
+```{r, echo=FALSE}
+#install.packages("leaps")
+library(leaps); 
+leaps<-regsubsets(AreaAve ~ AREAL_UTM3 + HEIGHT_50 + HEIGHT_MAX + MetP + Sta_UTM_X + Sta_UTM_Y + Cat_UTM_X + Cat_UTM_Y, data=data, nbest=10)
+
+summary(leaps); 
+layout(1);
+plot(leaps, scale="r2")
+library(car)
+subsets(leaps, statistic="rsq")
+#Other options for plot( ) are bic, Cp, and adjr2. Other options for plotting with subset( ) are bic, cp, adjr2, and rss.
+```
+
+  Compare two models
+```{r, echo=FALSE}
+fit1 <- lm(AreaAve ~ AREAL_UTM3 + HEIGHT_50 + HEIGHT_MAX + MetP + Sta_UTM_X + Sta_UTM_Y + Cat_UTM_X + Cat_UTM_Y, data = data);
+
+fit2 <- lm(formula = AreaAve ~ HEIGHT_50 + HEIGHT_MAX + MetP + Cat_UTM_Y, 
+    data = data);
+
+anova(fit1, fit2)
+# what is the meaning of the results
+
+```
+
+?  Cross validation, leave one out
+```{r, echo=FALSE}
+library(bootstrap)
+theta.fit <- function(x,y){lsfit(x,y)}
+theta.predict <- function(fit,x){cbind(1,x)%*%fit$coef}
+fit1 <- lm(AreaAve ~ AREAL_UTM3 + HEIGHT_50 + HEIGHT_MAX + MetP + Sta_UTM_X + Sta_UTM_Y + Cat_UTM_X + Cat_UTM_Y, data = data);
+
+fit2 <- lm(formula = AreaAve ~ HEIGHT_50 + HEIGHT_MAX + MetP + Cat_UTM_Y, 
+    data = data);
+
+# matrix of predictors, ## need all values are valid
+X1 <- data[,2:dim(data)[2]];
+y1 <- as.matrix(fit1$model$AreaAve);
+results1 <- crossval(X1,y1,theta.fit,theta.predict,ngroup=10);
+cor(y1, fit$fitted.values)**2 # raw R2 0.6254393
+cor(y1,results1$cv.fit)**2 # cross-validated R2  0.5973152, 0.604908 this value change every time
+
+X2 <- cbind(data$HEIGHT_50, data$HEIGHT_MAX, data$MetP, data$Cat_UTM_Y);
+y2 <- as.matrix(fit2$model$AreaAve);
+results2 <- crossval(X2,y2,theta.fit,theta.predict,ngroup=10);
+cor(y2, fit2$fitted.values)**2 # raw R2 0.6215887
+cor(y2, results2$cv.fit)**2 # cross-validated R2  0.6114412, 0.6066516
+# the shrinkage of R: absolute or relative?
+```
+
+  Relative importance
+```{r, echo=FALSE}
+# relative importance: relaimpo, and use fit2 <- lm(formula = AreaAve ~ GRAD_1085 + GRAD_FELT + MetP, data = AllInfo);
+library(relaimpo)
+fit1 <- lm(AreaAve ~ AREAL_UTM3 + HEIGHT_50 + HEIGHT_MAX + MetP + Sta_UTM_X + Sta_UTM_Y + Cat_UTM_X + Cat_UTM_Y, data = data);
+
+calc.relimp(fit1, type=c("lmg","last","first","pratt"), rela=TRUE)
+boot <- boot.relimp(fit1, b = 1000, type = c("lmg", "last", "first", "pratt"), rank = TRUE, diff = TRUE, rela = TRUE);
+booteval.relimp(boot) # print result
+plot(booteval.relimp(boot,sort=TRUE)) # plot result
+
+
+fit2 <- lm(formula = AreaAve ~ HEIGHT_50 + HEIGHT_MAX + MetP + Cat_UTM_Y, 
+    data = data);
+
+calc.relimp(fit2, type=c("lmg","last","first","pratt"), rela=TRUE)
+boot <- boot.relimp(fit2, b = 1000, type = c("lmg", "last", "first", "pratt"), rank = TRUE, diff = TRUE, rela = TRUE);
+booteval.relimp(boot) # print result
+plot(booteval.relimp(boot,sort=TRUE)) # plot result
+```
+
+  Generalized Linear Models
+```{r, echo=FALSE}
+fitGLM <- glm(AreaAve ~ AREAL_UTM3 + HEIGHT_50 + HEIGHT_MAX + MetP + Sta_UTM_X + Sta_UTM_Y + Cat_UTM_X + Cat_UTM_Y, data = data); 
+```
+
+?delete, Survival Analysis for GLM, does not work
+```{r, echo=FALSE}
+#install.packages("survival");
+library(survival)
+######################################################################
+## http://www.statmethods.net/advstats/glm.html do not understand the following example
+help(lung)
+# create a Surv object
+survobj <- with(lung, Surv(time,status))
+
+# Plot survival distribution of the total sample
+# Kaplan-Meier estimator
+fit0 <- survfit(survobj~1, data=lung)
+summary(fit0)
+plot(fit0, xlab="Survival Time in Days",
+   ylab="% Surviving", yscale=100,
+   main="Survival Distribution (Overall)")
+
+# Compare the survival distributions of men and women
+fit1 <- survfit(survobj~sex,data=lung)
+
+# plot the survival distributions by sex
+plot(fit1, xlab="Survival Time in Days",
+  ylab="% Surviving", yscale=100, col=c("red","blue"),
+  main="Survival Distributions by Gender")
+  legend("topright", title="Gender", c("Male", "Female"),
+  fill=c("red", "blue"))
+
+# test for difference between male and female
+# survival curves (logrank test)
+survdiff(survobj~sex, data=lung)
+
+# predict male survival from age and medical scores
+MaleMod <- coxph(survobj~age+ph.ecog+ph.karno+pat.karno,
+  data=lung, subset=sex==1)
+
+# display results
+MaleMod
+
+# evaluate the proportional hazards assumption
+cox.zph(MaleMod) 
+```
+
+  Robust Regression
+```{r, echo=FALSE}  
+# http://stat.ethz.ch/R-manual/R-devel/library/MASS/html/rlm.html
+# Fit a linear model by robust regression using an M estimator. 
+# what is the difference with normal linear regression http://stats.stackexchange.com/questions/29563/why-are-rlm-regression-coefficient-estimates-different-than-lm-in-r
+#From the QQ plot, it looks like you have a very long tailed error distribution. This is the kind of situation the Huber M-estimator is designed for and, in that situation, can give quite different estimates:
+#When the errors are normally distributed, the estimates will be pretty similar since, 
+#under the normal distribution, most of the Huber ρ function will fall under the |x|<k situation, which is equivalent to least squares.
+#In the long tailed situation you have, many fall into the |x|>k situation, which is a departure from OLS, which would explain the discrepancy. 
+#http://www.ats.ucla.edu/stat/r/dae/rreg.htm; https://cran.r-project.org/web/packages/sandwich/sandwich.pdf
+library(MASS)
+fitRLM <- rlm(formula = AreaAve ~ GRAD_1085 + GRAD_FELT + MetP, data = AllInfo);
+plot(fit2$residuals, fitRLM$residuals)
+hist(fit2$residuals)
+hist(fitRLM$residuals)
+
+# Bayesian linear regression: arm, https://it.unt.edu/sites/default/files/bayesglm_jds_jan2011.pdf
+fit2 <- lm(formula = AreaAve ~ GRAD_1085 + GRAD_FELT + MetP, data = AllInfo);
+fit2glm <- glm(formula = AreaAve ~ GRAD_1085 + GRAD_FELT + MetP, family = gaussian, data = AllInfo)
+fit2blm <- bayesglm(formula = AreaAve ~ GRAD_1085 + GRAD_FELT + MetP, family = gaussian, data = AllInfo, 
+	                prior.mean = 0, prior.scale = Inf, prior.df = Inf)
+simulates <- coef(sim(fit2blm));
+head(simulates, 10);
+posterior.open <- simulates[,2];
+hist(posterior.open)
+#quick look at data: 
+plot(density(posterior.open), main = "", xlab = "posterior.open", ylab = "Density")
+quantile(posterior.open, c(0.25, 0.975));
+library(MCMCpack);
+fit2MC <- MCMCregress(AreaAve ~ GRAD_1085 + GRAD_FELT + MetP, data = AllInfo, burnin = 3000, mcmc = 10000, thin = 1, verbose = 0, seed = NA, beta.start = NA)
+summary(fit2MC)
+#################################################################################################
+
+```
+
+  Bayesian linear regression 
+```{r, echo=FALSE}  
+DataPath <- "/hdata/fou/personlig/holi/Work/FlomKart/Data/";
+load(sprintf("%sAllInfo.RData", DataPath))
+#install.packages("brms");
+library(brms)
+Ave <- AllInfo[,1]; MetP <-AllInfo[,30];
+# Linear Gaussian model
+lin.mod <- brm(Ave ~ MetP, family="gaussian")
+# Log-transformed Linear Gaussian model
+LogAve <- log(Ave);
+log.lin.mod <- brm(LogAve ~ MetP, family="gaussian")
+# Poisson model: Family 'poisson' expects response variable of non-negative integers.
+#pois.mod <- brm(Ave ~ MetP, family="poisson")
+# Binomial model:  Family 'binomial' expects response variable of non-negative integers.
+#market.size <- rep(800, length(Ave));
+#bin.mod <- brm(Ave | trials(market.size) ~ MetP, family="binomial")
+
+# the plot functions should refer to the webpage
+#More: http://stats.stackexchange.com/questions/47008/how-would-you-do-bayesian-anova-and-regression-in-r
+```
+
+  Weighted regression
+```{r, echo=FALSE} 
+fit2Wei <- lm(formula = AreaAve ~ GRAD_1085 + GRAD_FELT + MetP, data = AllInfo, weights = QMED_n);
+fitWeiV <- lm(formula = AreaAve ~ MetP, data = AllInfo, weights = 1/QMED_n);
+fitWei <- lm(formula = AreaAve ~ MetP, data = AllInfo, weights = QMED_n);
+fitUni <- lm(formula = AreaAve ~ MetP, data = AllInfo);
+
+plot(AllInfo$MetP, AllInfo$AreaAve, xlim = c(10, 110), ylim = c(0, 3.2));
+par(new = TRUE)
+plot(AllInfo$MetP, fitWei$fitted.values, type = "l", col = "red", xlim = c(10, 110), ylim = c(0, 3.2));
+par(new = TRUE)
+plot(AllInfo$MetP, fitUni$fitted.values, type = "l", col = "blue", xlim = c(10, 110), ylim = c(0, 3.2));
+par(new = TRUE)
+plot(AllInfo$MetP, fitWeiV$fitted.values, type = "l", col = "yellow", xlim = c(10, 110), ylim = c(0, 3.2));
+
+```
+  Spatial interpolation
+```{r, echo=FALSE} 
+library(gstat)
+library(ggplot2)
+library(gstat)
+library(sp)
+library(maptools)
+index <- sample(1:nrow(data),round(0.75*nrow(data)))
+
+# based on station location
+Sta <- data;
+Sta$x <- Sta$Sta_UTM_X; Sta$y <- Sta$Sta_UTM_Y; coordinates(Sta) = ~x + y
+
+train_Sta <- Sta[index,]; test_Sta <- Sta[-index,];
+#ordinary kriging 
+result_Sta <- krige(formula = AreaAve ~ 1, locations = train_Sta, newdata = test_Sta);
+#? simple kriging, same as the ordinary beta =3, 1, 0.1
+result_Sta <- krige(formula = AreaAve ~ 1, beta = 3, locations = train_Sta, newdata = test_Sta);
+#universal kriging
+result_Sta <- krige(formula = AreaAve ~ x + y, locations = train_Sta, newdata = test_Sta);
+test_or <- as.data.frame(test_Sta); test_re <- as.data.frame(result_Sta);
+plot(test_or[,1], test_re[,3]);
+
+# based on catchment centriod
+Cat <- data;
+Cat$x <- Cat$Cat_UTM_X; Cat$y <- Cat$Cat_UTM_Y; coordinates(Cat) = ~x + y
+
+train_Cat <- Cat[index,]; test_Cat <- Cat[-index,];
+#ordinary kriging 
+result_Cat <- krige(formula = AreaAve ~ 1, locations = train_Cat, newdata = test_Cat);
+#? simple kriging, same as the ordinary beta =3, 1, 0.1
+result_Cat <- krige(formula = AreaAve ~ 1, beta = 3, locations = train_Cat, newdata = test_Cat);
+#universal kriging
+result_Cat <- krige(formula = AreaAve ~ x + y, locations = train_Cat, newdata = test_Cat);
+test_or <- as.data.frame(test_Cat); test_re <- as.data.frame(result_Cat);
+plot(test_or[,1], test_re[,3]);
+```  
+  
+  Blind box
+  ANN, require all data are valid values, whereas no station can match
+```{r, echo=FALSE}
+library(neuralnet)
+set.seed(500)
+
+test <- is.na(AllInfo); 
+Sta <- apply(test, 1, sum); Var <- apply(test, 2, sum);
+# Var
+#   AreaAve       QMED     QMED_n AREAL_UTM3  GRAD_1085  GRAD_FELT   GRAD_ELV HEIGHT_MIN  HEIGHT_10  HEIGHT_20  HEIGHT_30 
+#         0          0          0          0         80        125         80          3          0          0          0 
+# HEIGHT_40  HEIGHT_50  HEIGHT_60  HEIGHT_70  HEIGHT_80  HEIGHT_90 HEIGHT_MAX FELT_LE_KM  ELV_LE_KM JORDBRUKPR     MYRPRO 
+#         0          0          0          0          0          0          0          2         79        153         24 
+#   EFF_MYR    EFF_SJO    SKOGPRO     BREPRO     SJOPRO  SNAUFJPRO   URBANPRO       MetP 
+#       529         12         18        326          7         37        318          0 
+# can use AreaAve       QMED     QMED_n AREAL_UTM3 HEIGHT_50 MetP
+data <- cbind(AllInfo$AreaAve, AllInfo$AREAL_UTM3, AllInfo$HEIGHT_50, AllInfo$MetP);
+colnames(data) <- c("AreaAve", "AREAL_UTM3", "HEIGHT_50", "MetP");
+data <- data.frame(data);
+
+index <- sample(1:nrow(data),round(0.75*nrow(data)))
+train <- data[index,]
+test <- data[-index,]
+
+maxs <- apply(data, 2, max) 
+mins <- apply(data, 2, min)
+
+scaled <- as.data.frame(scale(data, center = mins, scale = maxs - mins))
+
+train_ <- scaled[index,]
+test_ <- scaled[-index,]
+
+n <- names(train_)
+f <- as.formula(paste("AreaAve ~", paste(n[!n %in% "AreaAve"], collapse = " + ")))
+nn <- neuralnet(f, data=train_, hidden=c(5,3),linear.output=T)
+
+pr.nn <- compute(nn, test_[,2:4])
+
+pr.nn_ <- pr.nn$net.result*(max(data$AreaAve)-min(data$AreaAve))+min(data$AreaAve)
+
+test.r <- (test_$AreaAve)*(max(data$AreaAve)-min(data$AreaAve))+min(data$AreaAve)
+
+MSE.nn <- sum((test.r - pr.nn_)^2)/nrow(test_)
+```
+
+
+3. examine regional growth curve
+?3.1 find homegenous regions and test hetergeniety and discortancy, working on
+
+divide regions according to the dailt discharge rather than bare annual maximun
+cluster to define homengeous region, using k-means or cluster analysis
+similarity among QMED of stations as a function of something (like semi-variance graph in kriging interpolation)
+
+remove discordant and examine hetergenity, will use dist and par later, so maybe fuzzy method about dist
+
+https://rstudio-pubs-static.s3.amazonaws.com/33876_1d7794d9a86647ca90c4f182df93f0e8.html
+  kmeans
+```{r, echo=FALSE}
+install.packages('rattle')
+data(wine, package='rattle')
+head(wine)
+
+wine.stand <- scale(wine[-1])  # To standarize the variables
+
+# K-Means
+k.means.fit <- kmeans(wine.stand, 3) # k = 3
+wssplot <- function(data, nc=15, seed=1234){
+  wss <- (nrow(data)-1)*sum(apply(data,2,var))
+  for (i in 2:nc){
+    set.seed(seed)
+    wss[i] <- sum(kmeans(data, centers=i)$withinss)}
+  plot(1:nc, wss, type="b", xlab="Number of Clusters",
+       ylab="Within groups sum of squares")}
+
+wssplot(wine.stand, nc=6) 
+
+library(cluster)
+clusplot(wine.stand, k.means.fit$cluster, main='2D representation of the Cluster solution',
+         color=TRUE, shade=TRUE,
+         labels=2, lines=0)
+table(wine[,1],k.means.fit$cluster)
+
+```
+
+  Hierarchical clustering
+```{r, echo=FALSE}
+d <- dist(wine.stand, method = "euclidean") # Euclidean distance matrix.
+#d <- dist(as.matrix(mtcars))
+H.fit <- hclust(d, method="ward")
+
+#d <- rpuDist(m)  
+# rpuHclust(d)
+
+## The "ward" method has been renamed to "ward.D"; note new "ward.D2"
+plot(H.fit) # display dendogram
+groups <- cutree(H.fit, k=3) # cut tree into 5 clusters
+# draw dendogram with red borders around the 5 clusters
+rect.hclust(H.fit, k=3, border="red") 
+
+# Ward Hierarchical Clustering with Bootstrapped p values
+library(pvclust)
+fit <- pvclust(mydata, method.hclust="ward",
+   method.dist="euclidean")
+plot(fit) # dendogram with p values
+# add rectangles around groups highly supported by the data
+pvrect(fit, alpha=.95) 
+
+# Model Based Clustering
+library(mclust)
+fit <- Mclust(mydata)
+plot(fit) # plot results
+summary(fit) # display the best model 
+
+## plot results
+# Centroid Plot against 1st 2 discriminant functions
+library(fpc)
+plotcluster(mydata, fit$cluster) 
+
+## validate
+library(fpc)
+cluster.stats(d, fit1$cluster, fit2$cluster) 
+```
+  Hetergeniety and discortancy
+```{r, echo=FALSE}
+  
+
+```
+
+3.3 find distribution functions for region and calculate regional growth curve
+  As example, use all data and use the best distribution type as the region
+```{r, echo=FALSE}
+library(nsRFA)
+#DataPath <- "/hdata/fou/personlig/holi/Work/FlomKart/Data/";
+DataPath <- "R:/personlig/holi/Work/FlomKart/Data/";
+FileQMED <- sprintf("%sQMED.txt", DataPath); 
+Temp <- read.table(FileQMED, header = TRUE, sep = ";", colClasses = "character");
+StaUsed <- Temp[as.numeric(Temp$QMED_n) >= 10,];
+Dist <- NULL; NotUsed <- NULL;
+for (iSta in seq(1, dim(StaUsed)[1], 1)) { #dim(StaUsed)[1]
+  StaName <- StaUsed[iSta, 1]; PerfV <- as.numeric(StaUsed[iSta,2]); 
+  QAM_file <- sprintf("%sQAM_%s.txt", DataPath, StaName);
+  AM <- read.table(QAM_file, header = FALSE, sep = ";");
+  
+  res <- try( MSClaio2008(AM[,2], dist = c("P3")));
+  if (inherits(res, "try-error")) {
+  	print(iSta);
+	  NotUsed <- c(NotUsed, iSta);
+  } else {
+	  MSC <- MSClaio2008(AM[,2]);
+	  capture.output(summary(MSC), file = sprintf("%sMSC_%s.txt", DataPath, StaName));
+	  conn <- file( sprintf("%sMSC_%s.txt", DataPath, StaName), open = "r");
+	  readLines(conn, n = 8);
+	  linn <-readLines(conn, n = 1)
+	  close(conn)
+	  DistTemp <- unlist(strsplit(linn, ":"));
+	  Dist <- c(Dist, DistTemp);
+  }
+}
+
+Dist <- matrix(Dist, ncol = 2, byrow = TRUE);
+colnames(Dist) <- c("DistType", "Pars");
+Dist <- data.frame(Dist)
+table(Dist$DistType)
+Final <- data.frame(StaUsed[-NotUsed,], Dist);
+save(Final, file = sprintf("%sFinalRegStat.RData", DataPath));
+```
+
+
+```{r, echo=FALSE}
+# NORM parameters of log(x)
+UsedIndex <- which(Final$DistType == "NORM parameters of log(x)");
+
+total <- rev(cumsum(rev(as.numeric(Final$QMED_n[UsedIndex]))))*as.numeric(Final$QMED_n[UsedIndex]);
+FinalWeight <- total/sum(total);
+
+Reg1 <- data.frame(Final[UsedIndex,], FinalWeight);
+
+ParsTemp <- matrix(unlist(strsplit(as.character(Reg1$Pars), " ")), ncol = 6, byrow = TRUE);
+P1 <- as.numeric(ParsTemp[, 3]); P2 <- as.numeric(ParsTemp[, 5]);
+RegPars <- c(sum(P1*FinalWeight), sum(P2*Reg1$FinalWeight))
+```
+
+
+
