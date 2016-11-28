@@ -8,9 +8,7 @@ Q = QMED * X_T
 Q: the estimated flood; QMED: the index flood; X_T: regional growth curve
 
 Future coding:
-stationary (trend) test, interdependence test
 
-how to count non-stationarity if it exists
 combine nearest station (donor) and catchment descriptions together
 
 rather than on the AMS, can be QMED/mean(annual_runoff), rather rainfall can be Runoff coefficient
@@ -19,6 +17,10 @@ landuse and geology are bad indicator of flood (since the ground has get saturat
 how to use daily discharge information in regression
 \\nve\fil\h\HM\Interne Prosjekter\Flomkart\Data\Flooddata\ams_and_fgp.txt
 flood and rain component
+
+divide regions using the daily discharge
+
+similarity among QMED of stations as a function of something (like semi-variance graph in kriging interpolation)
 ---
 QMED can be calculated from historical discharge at sites. For ungauged sites, hydrological modelling and spatial regression are generally used. There, we only examine the spatial regression (or interpolation) methods.
 
@@ -71,6 +73,28 @@ write.table(AMSZoo,
 }
 FinalRe <- data.frame(StaName = StaNames, QMED = QMED, QMED_n = QMED_n);
 write.table(x = FinalRe, file = sprintf("%sQMED.txt", DataPath), sep = ";", row.names = FALSE, quote = FALSE);
+```
+  test stationarity using MK
+```{r, echo = TRUE}
+#install.packages("trend")
+library(trend)
+data(Nile)
+plot(Nile)
+res <- mk.test(Nile)
+summary.trend.test(res)
+
+```
+
+  interdependence test
+```{r, echo = TRUE}  
+install.packages("extremevalues")
+library(extremevalues)
+data <- sin(1:500);
+acf(data)
+
+alpha <- 0.25;
+sqrt(2)*invErf(1-2*alpha)/sqrt(length(data))
+
 ```
 
 1.2 prepare climate data for each station, including daily data and annual mean
@@ -623,7 +647,7 @@ anova(fit1, fit2)
 
 ```
 
-?  Cross validation, leave one out
+  Cross validation, bootstrap
 ```{r, echo=FALSE}
 library(bootstrap)
 theta.fit <- function(x,y){lsfit(x,y)}
@@ -647,6 +671,33 @@ cor(y2, fit2$fitted.values)**2 # raw R2 0.6215887
 cor(y2, results2$cv.fit)**2 # cross-validated R2  0.6114412, 0.6066516
 # the shrinkage of R: absolute or relative?
 ```
+
+
+  Cross validation, Leave-One-Out, ngroup = number_of_observations
+```{r, echo=FALSE}
+library(bootstrap)
+theta.fit <- function(x,y){lsfit(x,y)}
+theta.predict <- function(fit,x){cbind(1,x)%*%fit$coef}
+fit1 <- lm(AreaAve ~ AREAL_UTM3 + HEIGHT_50 + HEIGHT_MAX + MetP + Sta_UTM_X + Sta_UTM_Y + Cat_UTM_X + Cat_UTM_Y, data = data);
+
+fit2 <- lm(formula = AreaAve ~ HEIGHT_50 + HEIGHT_MAX + MetP + Cat_UTM_Y, 
+    data = data);
+
+# matrix of predictors, ## need all values are valid
+X1 <- data[,2:dim(data)[2]];
+y1 <- as.matrix(fit1$model$AreaAve);
+results1 <- crossval(X1,y1,theta.fit,theta.predict, ngroup=dim(X1)[1]);
+cor(y1, fit$fitted.values)**2 # raw R2 0.6254393
+cor(y1,results1$cv.fit)**2 # cross-validated R2  0.5973152, 0.604908 this value change every time
+
+X2 <- cbind(data$HEIGHT_50, data$HEIGHT_MAX, data$MetP, data$Cat_UTM_Y);
+y2 <- as.matrix(fit2$model$AreaAve);
+results2 <- crossval(X2,y2,theta.fit,theta.predict,ngroup=dim(X2)[1]);
+cor(y2, fit2$fitted.values)**2 # raw R2 0.6215887
+cor(y2, results2$cv.fit)**2 # cross-validated R2  0.6114412, 0.6066516
+# the shrinkage of R: absolute or relative?
+```
+
 
   Relative importance
 ```{r, echo=FALSE}
@@ -674,48 +725,6 @@ plot(booteval.relimp(boot,sort=TRUE)) # plot result
 fitGLM <- glm(AreaAve ~ AREAL_UTM3 + HEIGHT_50 + HEIGHT_MAX + MetP + Sta_UTM_X + Sta_UTM_Y + Cat_UTM_X + Cat_UTM_Y, data = data); 
 ```
 
-?delete, Survival Analysis for GLM, does not work
-```{r, echo=FALSE}
-#install.packages("survival");
-library(survival)
-######################################################################
-## http://www.statmethods.net/advstats/glm.html do not understand the following example
-help(lung)
-# create a Surv object
-survobj <- with(lung, Surv(time,status))
-
-# Plot survival distribution of the total sample
-# Kaplan-Meier estimator
-fit0 <- survfit(survobj~1, data=lung)
-summary(fit0)
-plot(fit0, xlab="Survival Time in Days",
-   ylab="% Surviving", yscale=100,
-   main="Survival Distribution (Overall)")
-
-# Compare the survival distributions of men and women
-fit1 <- survfit(survobj~sex,data=lung)
-
-# plot the survival distributions by sex
-plot(fit1, xlab="Survival Time in Days",
-  ylab="% Surviving", yscale=100, col=c("red","blue"),
-  main="Survival Distributions by Gender")
-  legend("topright", title="Gender", c("Male", "Female"),
-  fill=c("red", "blue"))
-
-# test for difference between male and female
-# survival curves (logrank test)
-survdiff(survobj~sex, data=lung)
-
-# predict male survival from age and medical scores
-MaleMod <- coxph(survobj~age+ph.ecog+ph.karno+pat.karno,
-  data=lung, subset=sex==1)
-
-# display results
-MaleMod
-
-# evaluate the proportional hazards assumption
-cox.zph(MaleMod) 
-```
 
   Robust Regression
 ```{r, echo=FALSE}  
@@ -828,7 +837,7 @@ test_or <- as.data.frame(test_Cat); test_re <- as.data.frame(result_Cat);
 plot(test_or[,1], test_re[,3]);
 ```  
   
-  Blind box
+  Blind box-models
   ANN, require all data are valid values, whereas no station can match
 ```{r, echo=FALSE}
 library(neuralnet)
@@ -873,17 +882,42 @@ test.r <- (test_$AreaAve)*(max(data$AreaAve)-min(data$AreaAve))+min(data$AreaAve
 MSE.nn <- sum((test.r - pr.nn_)^2)/nrow(test_)
 ```
 
+  SVM: Support Vector Regression
+  another example by kernlab: https://escience.rpi.edu/data/DA/svmbasic_notes.pdf
+```{r, echo=FALSE}
+library(e1071)
+x <- seq(1, 10, 1)
+y <- x * 5 + 10 + rnorm(10, 0, 1)
+
+data <- data.frame(X = x, Y = y)
+model <- svm(Y ~ X , data)
+predictedY <- predict(model, data)
+
+# perform a grid search
+tuneResult <- tune(svm, Y ~ X,  data = data, ranges = list(epsilon = seq(0,1,0.1), cost = 2^(2:9)))
+print(tuneResult)
+# best performance: MSE = 8.371412, RMSE = 2.89 epsilon 1e-04 cost 4
+# Draw the tuning graph
+plot(tuneResult)
+tunedModel <- tuneResult$best.model
+tunedModelY <- predict(tunedModel, data) 
+
+```
+  Random forest
+```{r, echo=FALSE}
+data(Boston)
+set.seed(1341)
+str(Boston)
+BH.rf <- randomForest(medv ~ ., Boston)
+print(BH.rf)
+re <- predict(BH.rf, Boston)
+plot(re, Boston$medv)
+
+```
 
 3. examine regional growth curve
-?3.1 find homegenous regions and test hetergeniety and discortancy, working on
+3.1 find homegenous regions and test hetergeniety and discortancy
 
-divide regions according to the dailt discharge rather than bare annual maximun
-cluster to define homengeous region, using k-means or cluster analysis
-similarity among QMED of stations as a function of something (like semi-variance graph in kriging interpolation)
-
-remove discordant and examine hetergenity, will use dist and par later, so maybe fuzzy method about dist
-
-https://rstudio-pubs-static.s3.amazonaws.com/33876_1d7794d9a86647ca90c4f182df93f0e8.html
   kmeans
 ```{r, echo=FALSE}
 install.packages('rattle')
@@ -928,35 +962,152 @@ groups <- cutree(H.fit, k=3) # cut tree into 5 clusters
 rect.hclust(H.fit, k=3, border="red") 
 
 # Ward Hierarchical Clustering with Bootstrapped p values
+#install.packages("pvclust")
+
 library(pvclust)
-fit <- pvclust(mydata, method.hclust="ward",
-   method.dist="euclidean")
+fit <- pvclust(wine.stand, method.hclust="ward", method.dist="euclidean")
 plot(fit) # dendogram with p values
 # add rectangles around groups highly supported by the data
 pvrect(fit, alpha=.95) 
 
 # Model Based Clustering
 library(mclust)
-fit <- Mclust(mydata)
+fit <- Mclust(wine.stand)
 plot(fit) # plot results
 summary(fit) # display the best model 
-
-## plot results
-# Centroid Plot against 1st 2 discriminant functions
-library(fpc)
-plotcluster(mydata, fit$cluster) 
-
-## validate
-library(fpc)
-cluster.stats(d, fit1$cluster, fit2$cluster) 
 ```
-  Hetergeniety and discortancy
+
 ```{r, echo=FALSE}
-  
+url = 'http://www.biz.uiowa.edu/faculty/jledolter/DataMining/protein.csv'
+food <- read.csv(url)
+head(food)
+set.seed(123456789) ## to fix the random starting clusters
+grpMeat <- kmeans(food[,c("WhiteMeat","RedMeat")], centers=3, nstart=10)
+grpMeat
+o=order(grpMeat$cluster)
+data.frame(food$Country[o],grpMeat$cluster[o])
+plot(food$Red, food$White, type="n", xlim=c(3,19), xlab="Red Meat", ylab="White Meat")
+text(x=food$Red, y=food$White, labels=food$Country,col=grpMeat$cluster+1)
+set.seed(123456789)
+grpProtein <- kmeans(food[,-1], centers=7, nstart=10)
+o=order(grpProtein$cluster)
+data.frame(food$Country[o],grpProtein$cluster[o])
+library(cluster)
+clusplot(food[,-1], grpProtein$cluster, main='2D representation of the Cluster solution', color=TRUE, shade=TRUE, labels=2, lines=0)
+foodagg=agnes(food,diss=FALSE,metric="euclidian")
+plot(foodagg, main='Dendrogram') ## dendrogram
+groups <- cutree(foodagg, k=4) # cut tree into 3 clusters
+rect.hclust(foodagg, k=4, border="red") 
 
 ```
+
+```{r, echo=FALSE}
+setwd("C:/Users/holi/Downloads")
+offers<-read.table('offers.csv', sep = ';', header=T)
+head(offers)
+transactions<-read.table('transactions.csv', sep = ';', header=T)
+head(transactions)
+library(reshape)
+pivot<-melt(transactions[1:2])
+pivot<-(cast(pivot,value~Customer.Last.Name,fill=0,fun.aggregate=function(x) length(x)))
+pivot<-cbind(offers,pivot[-1])
+
+# write.csv(file="pivot.csv",pivot) # to save your data
+
+cluster.data<-pivot[,8:length(pivot)]
+cluster.data<-t(cluster.data)
+head(cluster.data)
+library(cluster)
+D=daisy(cluster.data, metric='gower')
+H.fit <- hclust(D, method="ward")
+plot(H.fit) # display dendrogram
+
+groups <- cutree(H.fit, k=4) # cut tree into 4 clusters
+
+# draw dendogram with red borders around the 4 clusters
+rect.hclust(H.fit, k=4, border="red") 
+
+clusplot(cluster.data, groups, color=TRUE, shade=TRUE,
+         labels=2, lines=0, main= 'Customer segments')
+cluster.deals<-merge(transactions[1:2],groups, by.x = "Customer.Last.Name", by.y = "row.names")
+
+colnames(cluster.deals)<-c("Name","Offer","Cluster")
+head(cluster.deals)
+# Get top deals by cluster
+cluster.pivot<-melt(cluster.deals,id=c("Offer","Cluster"))
+cluster.pivot<-cast(cluster.pivot,Offer~Cluster,fun.aggregate=length)
+cluster.topDeals<-cbind(offers,cluster.pivot[-1])
+head(cluster.topDeals)
+
+```
+
+  clara or pam
+```{r, echo=FALSE}
+x <- rbind(cbind(rnorm(2,0,8), rnorm(2,0,8)),
+cbind(rnorm(3,50,8), rnorm(3,50,8)))
+x
+clarax <- clara(x, 2, samples=1)
+clarax
+clarax$clustering
+plot(clarax)
+x <- rbind(cbind(rnorm(10,0,0.5), rnorm(10,0,0.5)),
+cbind(rnorm(15,5,0.5), rnorm(15,5,0.5)))
+pamx <- pam(x, 2)
+pamx
+
+```
+
+  Hetergeniety and discortancy
+   (1) screening the data using the discordancy measure Di,
+```{r, echo=FALSE}
+library(nsRFA)
+data(hydroSIMN)
+annualflows
+str(annualflows)
+x <- annualflows["dato"][,]
+cod <- annualflows["cod"][,]
+split(x, cod)
+Dis <- discordancy(x, cod)
+criticalD()
+#Hosking and Wallis suggest to consider a site discordant if D>=3 if N>=15 (where N is the number of sites considered in the region). 
+#For N < 15 the critical values of D can be listed with criticalD
+
+```
+   
+   (2) homogeneity testing using the heterogeneity measure H2; 
+  
+```{r, echo=FALSE}
+#Hosking and Wallis (1997) Reginal Frequency Analysis P63, H2
+#'acceptably homogeneous' if H2<1;
+#'possibly heterogeneous' if 1<=H2<2;
+#'definitely heterogeneous' ifH2>=2.
+
+
+
+#Robson and Reed (1999) Flood Estimation Handbook (3: Statistical procedures for flood freqency estimation) 
+# P38
+#'acceptably homogeneous' if H2<=1;
+#'possibly heterogeneous' if 1<H2<=2;
+#'heterogeneous' if 2<H2<=4;
+#'strongly heterogeneous' ifH2>4.
+
+# P161
+# L-CV alone (H1); L-CV and L-skewness (H2); L-skewness and L-kurtosis (H3)
+# High H2 show that a pooling-gropu is hetergeneous.
+# 'a significant proportion of pooling-groups are heterogeneous', if 2<H2<=4;
+# 'only a limited number are strongly heterogeneous', if H2>4;
+# 
+data(hydroSIMN)
+annualflows
+str(annualflows)
+x <- annualflows["dato"][,]
+cod <- annualflows["cod"][,]
+HW.tests(x, cod)
+```
+
 
 3.3 find distribution functions for region and calculate regional growth curve
+
   As example, use all data and use the best distribution type as the region
 ```{r, echo=FALSE}
 library(nsRFA)
