@@ -12,7 +12,6 @@ Future coding:
 combine nearest station (donor) and catchment descriptions together
 
 rather than on the AMS, can be QMED/mean(annual_runoff), rather rainfall can be Runoff coefficient
-landuse and geology are bad indicator of flood (since the ground has get saturated before flood in most cases in saturated runoff area)
 
 how to use daily discharge information in regression
 \\nve\fil\h\HM\Interne Prosjekter\Flomkart\Data\Flooddata\ams_and_fgp.txt
@@ -21,6 +20,7 @@ flood and rain component
 divide regions using the daily discharge
 
 similarity among QMED of stations as a function of something (like semi-variance graph in kriging interpolation)
+
 
 other possible classification methods: http://www.sthda.com/english/wiki/cluster-analysis-in-r-unsupervised-machine-learning; http://horicky.blogspot.no/2012/04/machine-learning-in-r-clustering.html
 ---
@@ -157,6 +157,29 @@ GISPath <- "R:/personlig/holi/Work/FlomKart/FromProject/";
 #GISPath <- "/hdata/fou/personlig/holi/Work/FlomKart/FromProject/"
 StaShp <- readShapePoints(sprintf("%sHydrologi_MaleserieMalestasjon.shp", GISPath))
 CatShp <- readShapePoly(sprintf("%sCatShp.shp", GISPath))
+
+DataFrame <- as.data.frame(CatShp);
+Temp <- unlist(strsplit(as.character(DataFrame$stID), "[.]"));
+Temp <- matrix(unlist(Temp), ncol = 3, byrow = TRUE);
+CatCom <- as.numeric(Temp[,1]) * 100000 + as.numeric(Temp[,2]);
+
+DataFrame <- as.data.frame(StaShp);
+Temp <- unlist(strsplit(as.character(DataFrame$stID), "[.]"));
+Temp <- matrix(unlist(Temp), ncol = 3, byrow = TRUE);
+StaCom <- as.numeric(Temp[,1]) * 100000 + as.numeric(Temp[,2]);
+
+Sta_Cat <- read.table(sprintf("%sFeltnr_flomkart_til_feltnr_GIS.txt", GISPath), sep = ";", header = FALSE);
+colnames(Sta_Cat) <- c("Sta", "Cat");
+
+for (iC in seq(1, dim(Sta_Cat)[2])) {
+  CatCom[which(CatCom) == Sta_Cat[iC, 2]] <- Sta_Cat[iC, 2];
+}
+
+CatShp <- cbind(CatShp, CatCom);
+StaShp <- cbind(StaShp, StaCom);
+###############################################
+# should match based on CatCom and StaCom
+
 UsedSta <- StaShp[as.character(StaShp$stSamletID) %in% as.character(CatShp$stSamletID),]
 
 UniqueSta <- UsedSta[!duplicated(as.character(UsedSta$stSamletID)),];
