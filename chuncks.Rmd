@@ -21,6 +21,8 @@ flood and rain component
 divide regions using the daily discharge
 
 similarity among QMED of stations as a function of something (like semi-variance graph in kriging interpolation)
+
+other possible classification methods: http://www.sthda.com/english/wiki/cluster-analysis-in-r-unsupervised-machine-learning; http://horicky.blogspot.no/2012/04/machine-learning-in-r-clustering.html
 ---
 QMED can be calculated from historical discharge at sites. For ungauged sites, hydrological modelling and spatial regression are generally used. There, we only examine the spatial regression (or interpolation) methods.
 
@@ -915,6 +917,30 @@ plot(re, Boston$medv)
 
 ```
 
+  fuzzy method
+```{r, echo=FALSE}
+#install.packages("frbs")
+library(frbs)
+data(frbsData)
+data.train <- frbsData$GasFurnance.dt[1 : 204, ]
+data.tst <- frbsData$GasFurnance.dt[205 : 292, 1 : 2]
+real.val <- matrix(frbsData$GasFurnance.dt[205 : 292, 3], ncol = 1)
+range.data <-apply(data.train, 2, range)
+method.type <- "WM"
+control <- list(num.labels = 15, type.mf = "GAUSSIAN", type.defuz = "WAM",
+type.tnorm = "MIN", type.snorm = "MAX", type.implication.func = "ZADEH",
+name = "sim-0")
+object.reg <- frbs.learn(data.train, range.data, method.type, control)
+## Predicting step: Predict for newdata
+res.test <- predict(object.reg, data.tst)
+summary(object.reg)
+plotMF(object.reg)
+res.test
+plot(res.test, real.val)
+
+```
+
+
 3. examine regional growth curve
 3.1 find homegenous regions and test hetergeniety and discortancy
 
@@ -1057,6 +1083,36 @@ pamx
 
 ```
 
+  fuzzy method
+```{r, echo=FALSE}
+library(cluster)
+set.seed(123)
+# Load the data
+data("USArrests")
+# Subset of USArrests
+ss <- sample(1:50, 20)
+df <- scale(USArrests[ss,])
+# Compute fuzzy clustering
+res.fanny <- fanny(df, 4)
+# Cluster plot using fviz_cluster()
+# You can use also : clusplot(res.fanny)
+library(factoextra)
+fviz_cluster(res.fanny, frame.type = "norm",
+             frame.level = 0.68)
+
+fviz_silhouette(res.fanny, label = TRUE)
+res.fanny$membership
+library(corrplot)
+corrplot(res.fanny$membership, is.corr = FALSE)
+res.fanny$clustering
+set.seed(123)
+library(e1071)
+cm <- cmeans(df, 4)
+
+fviz_cluster(list(data = df, cluster=cm$cluster), frame.type = "norm",
+             frame.level = 0.68)
+
+```
   Hetergeniety and discortancy
    (1) screening the data using the discordancy measure Di,
 ```{r, echo=FALSE}
