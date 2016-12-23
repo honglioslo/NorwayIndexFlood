@@ -1,3 +1,28 @@
+# how to use: 
+# 1 put the bewlow script in a *.bat file and run 
+# C:\Python27\ArcGIS10.3\python.exe DDDparametre1HongFlowAcc.py 2.1
+# 2 run the above script in window cmd
+# need data:
+# working path:     arbeidsomr = "C:\\Temp\\FlowLength"  # katalogen m finnes
+# NVE data specified in main function
+# scratch.gdb in C:\\Temp for temporaty storage
+# NVE python lib: General10.py in C:\\Temp\\FlowLength
+
+# output: 2_11_0.gdb a gis database for each station. These files are generated during the calculation.
+# 2_15_0_Stat.txt for each station in C:\Temp\FlowLength\resultat 
+## LENGHTriver, 217429.57768
+## MAXriver, 24143
+## MEANriver, 11634.069258
+## STDriver, 4767.65248242
+# a log file: DDDparametre1.py.log, error message and if success of each station
+## 2016-12-23,10:16:25   1 :  2.1.0
+## 2016-12-23,10:16:30   1 :  2.1.0 ferdig
+
+# algorithms
+## flowACC > thValue -> river cells (a control the number of cells are equal to the polyline river)
+## get flowDir for the river cells; cal FlowLength for the river cells, see http://pro.arcgis.com/en/pro-app/tool-reference/spatial-analyst/flow-length.htm
+# modified by Hong Li (HM, NVE, holi@nve.no) based on script from Peereboom Ivar Olaf (HG, NVE)
+
 # -*- coding: latin_1 -*-
 #***********************************************************************************
 #-----------------------------------------------------------------------------------
@@ -273,7 +298,7 @@ def main():
     msta = sys.argv[1]
     #msta = 101.1
     #datotag = "20161115"                        # dette er bare en tag
-    arbeidsomr = "C:\\Temp\\FlowLength"  # katalogen m� finnes
+    arbeidsomr = "C:\\Temp\\FlowLength"  # katalogen m finnes
 	#arbeidsomr = "C:\\Temp\\DDD_%s" %(datotag)  # katalogen m� finnes
     #mstaliste = ['6.71.0','12.114.0','12.150.0','12.286.0','12.290.0','15.49.0','16.140.0','36.9.0','78.8.0','107.3.0','121.20.0','163.5.0','234.1','311.6.0','313.1']          # Stasjons liste
 
