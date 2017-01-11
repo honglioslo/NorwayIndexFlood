@@ -1,0 +1,12 @@
+## \\nve\fil\h\HM\Interne Prosjekter\Flomkart\Data\Flooddata\amsvalues.txt
+P1. line_no regine main daily_ams_dates daily_ams fine_ams_times fine_ams
+    908	2	275	2014-01-01	0	2014-01-01 01:00:00	0
+    1509	2	578	2013-01-01	0	2013-01-01 01:00:00	0
+These two values shoule be removed. Check the dagnut dataset and all avlues are 0 rather than -9999.
+
+P2. change the station number to the GIS station number as specified in \\nve\fil\h\HM\Interne Prosjekter\Flomkart\Data\CatchmentCharacteristics\Feltnr_flomkart_til_feltnr_GIS.txt
+
+R format in \\nve\fil\h\HM\Interne Prosjekter\Flomkart\aahlIndexFlood\GitHub\ams.Rdata
+
+## \\nve\fil\h\HM\Interne Prosjekter\Flomkart\Data\CatchmentCharacteristics\cp_floodstations.txt
+
